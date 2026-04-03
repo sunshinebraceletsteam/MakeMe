@@ -1,0 +1,1407 @@
+<!doctype html>
+<html lang="en" class="h-full">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MakeMe</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.263.0/dist/umd/lucide.min.js"></script>
+  <script src="/_sdk/element_sdk.js"></script>
+  <script src="/_sdk/data_sdk.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Playfair+Display:wght@600;700&amp;display=swap" rel="stylesheet">
+  <style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:'DM Sans',sans-serif;overflow:hidden}
+.app-shell{height:100%;width:100%;display:flex;flex-direction:column;background:#fef7f0}
+.tab-content{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
+.bottom-bar{flex-shrink:0}
+.accent{color:#ff964f}
+.bg-accent{background:#ff964f}
+.bg-accent-light{background:#fff3e8}
+.border-accent{border-color:#ff964f}
+.ring-accent{--tw-ring-color:#ff964f}
+.recipe-card{background:#fff;border-radius:16px;box-shadow:0 2px 12px rgba(255,150,79,0.08);overflow:hidden;transition:transform 0.2s}
+.recipe-card:active{transform:scale(0.98)}
+.pill{display:inline-flex;align-items:center;padding:4px 12px;border-radius:999px;font-size:12px;font-weight:600}
+.pill-expert{background:linear-gradient(135deg,#ff964f,#ff6b2b);color:#fff}
+.pill-cook{background:#fff3e8;color:#ff964f}
+.pill-personal{background:#f0f0f0;color:#666}
+.emoji-thumb{width:100%;height:140px;display:flex;align-items:center;justify-content:center;font-size:64px;background:linear-gradient(135deg,#fff3e8,#ffe8d4)}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:100;display:flex;align-items:flex-end;justify-content:center}
+.modal-sheet{background:#fff;border-radius:24px 24px 0 0;width:100%;max-height:90%;overflow-y:auto;padding:24px;animation:slideUp 0.3s ease}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.cooking-mode{position:fixed;inset:0;z-index:200;display:flex;flex-direction:column}
+.cooking-bg{background:linear-gradient(180deg,#ff964f 0%,#ff6b2b 100%);color:#fff}
+.step-card{background:rgba(255,255,255,0.15);backdrop-filter:blur(10px);border-radius:20px;padding:24px;margin:16px}
+.voice-pulse{animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.1);opacity:0.8}}
+.sub-tab{padding:8px 20px;border-radius:999px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s}
+.sub-tab.active{background:#ff964f;color:#fff}
+.sub-tab:not(.active){background:#fff3e8;color:#ff964f}
+.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:12px 24px;border-radius:12px;z-index:300;font-size:14px;animation:fadeInOut 2.5s ease}
+@keyframes fadeInOut{0%{opacity:0;transform:translateX(-50%) translateY(-10px)}10%{opacity:1;transform:translateX(-50%) translateY(0)}80%{opacity:1}100%{opacity:0}}
+input,textarea,select{font-family:'DM Sans',sans-serif}
+.star{cursor:pointer;transition:transform 0.15s}
+.star:hover{transform:scale(1.2)}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:#ffd4b0;border-radius:4px}
+</style>
+  <style>body { box-sizing: border-box; }</style>
+ </head>
+ <body class="h-full">
+  <div class="app-shell" id="app"><!-- Toast container -->
+   <div id="toast-container"></div><!-- Main Tab Content -->
+   <div class="tab-content" id="tab-content"></div><!-- Bottom Navigation -->
+   <div class="bottom-bar bg-white border-t border-gray-100 px-2 py-2 flex justify-around items-center" style="padding-bottom:env(safe-area-inset-bottom,8px)"><button onclick="switchTab('home')" class="nav-btn flex flex-col items-center gap-1 p-2 rounded-xl transition-all" data-tab="home"> <i data-lucide="home" style="width:22px;height:22px"></i> <span class="text-xs font-semibold">Home</span> </button> <button onclick="switchTab('my-recipes')" class="nav-btn flex flex-col items-center gap-1 p-2 rounded-xl transition-all" data-tab="my-recipes"> <i data-lucide="book-open" style="width:22px;height:22px"></i> <span class="text-xs font-semibold">My Recipes</span> </button> <button onclick="switchTab('feed')" class="nav-btn flex flex-col items-center gap-1 p-2 rounded-xl transition-all" data-tab="feed"> <i data-lucide="compass" style="width:22px;height:22px"></i> <span class="text-xs font-semibold">Feed</span> </button> <button onclick="switchTab('profile')" class="nav-btn flex flex-col items-center gap-1 p-2 rounded-xl transition-all" data-tab="profile"> <i data-lucide="user" style="width:22px;height:22px"></i> <span class="text-xs font-semibold">Profile</span> </button>
+   </div>
+  </div><!-- Cooking Mode Overlay -->
+  <div id="cooking-mode" class="cooking-mode cooking-bg" style="display:none"></div><!-- Modal Overlay -->
+  <div id="modal-overlay" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal()"></div>
+  <script>
+// ===== STATE =====
+let allRecipes = [];
+let allUsers = [];
+let currentTab = 'home';
+let feedSubTab = 'discover';
+let currentUser = null;
+let isLoggedIn = false;
+let cookingState = null;
+let speechSynth = window.speechSynthesis || null;
+let currentUtterance = null;
+let voiceRecognition = null;
+let cookingStartTime = null;
+window.viewingUserId = null;
+
+const CATEGORIES = ['Italian','Mexican','Asian','American','Indian','Mediterranean','Dessert','Breakfast','Salad','Soup','BBQ','Seafood','Vegan','Quick Meals'];
+const DEFAULT_AVATAR = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2ZmOTY0ZiIgb3BhY2l0eT0iMC4yIi8+PGNpcmNsZSBjeD0iNTAiIGN5PSIzNSIgcj0iMTUiIGZpbGw9IiNmZjk2NGYiLz48cGF0aCBkPSJNMzAgNjBhMjAgMjAgMCAwIDEgNDAgMHYxMEgzMHoiIGZpbGw9IiNmZjk2NGYiLz48L3N2Zz4=';
+
+// ===== CONFIG =====
+const defaultConfig = {
+  app_title: 'MakeMe',
+  tagline: 'Cook. Share. Discover.',
+  background_color: '#fef7f0',
+  surface_color: '#ffffff',
+  text_color: '#2d2017',
+  primary_action_color: '#ff964f',
+  secondary_action_color: '#ff6b2b',
+  font_family: 'DM Sans',
+  font_size: 15
+};
+
+// ===== ELEMENT SDK =====
+window.elementSdk.init({
+  defaultConfig,
+  onConfigChange: async (config) => {
+    const bg = config.background_color || defaultConfig.background_color;
+    const surface = config.surface_color || defaultConfig.surface_color;
+    const text = config.text_color || defaultConfig.text_color;
+    const primary = config.primary_action_color || defaultConfig.primary_action_color;
+    const secondary = config.secondary_action_color || defaultConfig.secondary_action_color;
+    const font = config.font_family || defaultConfig.font_family;
+    const size = config.font_size || defaultConfig.font_size;
+
+    document.querySelector('.app-shell').style.background = bg;
+    document.body.style.fontFamily = `${font}, DM Sans, sans-serif`;
+    document.body.style.fontSize = size + 'px';
+    document.body.style.color = text;
+
+    document.querySelectorAll('.recipe-card').forEach(c => c.style.background = surface);
+    document.querySelectorAll('.bg-accent').forEach(e => e.style.background = primary);
+    document.querySelectorAll('.accent').forEach(e => e.style.color = primary);
+    document.querySelectorAll('.sub-tab.active').forEach(e => e.style.background = primary);
+
+    const titleEl = document.getElementById('home-title');
+    if(titleEl) titleEl.textContent = config.app_title || defaultConfig.app_title;
+    const tagEl = document.getElementById('home-tagline');
+    if(tagEl) tagEl.textContent = config.tagline || defaultConfig.tagline;
+  },
+  mapToCapabilities: (config) => ({
+    recolorables: [
+      {get:()=>config.background_color||defaultConfig.background_color,set:v=>{config.background_color=v;window.elementSdk.setConfig({background_color:v})}},
+      {get:()=>config.surface_color||defaultConfig.surface_color,set:v=>{config.surface_color=v;window.elementSdk.setConfig({surface_color:v})}},
+      {get:()=>config.text_color||defaultConfig.text_color,set:v=>{config.text_color=v;window.elementSdk.setConfig({text_color:v})}},
+      {get:()=>config.primary_action_color||defaultConfig.primary_action_color,set:v=>{config.primary_action_color=v;window.elementSdk.setConfig({primary_action_color:v})}},
+      {get:()=>config.secondary_action_color||defaultConfig.secondary_action_color,set:v=>{config.secondary_action_color=v;window.elementSdk.setConfig({secondary_action_color:v})}}
+    ],
+    borderables: [],
+    fontEditable: {get:()=>config.font_family||defaultConfig.font_family,set:v=>{config.font_family=v;window.elementSdk.setConfig({font_family:v})}},
+    fontSizeable: {get:()=>config.font_size||defaultConfig.font_size,set:v=>{config.font_size=v;window.elementSdk.setConfig({font_size:v})}}
+  }),
+  mapToEditPanelValues: (config) => new Map([
+    ['app_title', config.app_title || defaultConfig.app_title],
+    ['tagline', config.tagline || defaultConfig.tagline]
+  ])
+});
+
+// ===== DATA SDK =====
+const dataHandler = {
+  onDataChanged(data) {
+    // Separate recipes from user profiles
+    const recipes = data.filter(d => d.type === 'recipe');
+    const users = data.filter(d => d.type === 'user');
+    
+    allRecipes = recipes;
+    allUsers = users;
+    
+    if(isLoggedIn && currentUser) {
+      renderCurrentTab();
+    }
+  }
+};
+
+(async()=>{
+  const r = await window.dataSdk.init(dataHandler);
+  if(!r.isOk) console.error('Data SDK init failed');
+  
+  // Check for existing user in localStorage
+  const savedUserId = localStorage.getItem('makeme_user_id');
+  if(savedUserId) {
+    const user = allUsers.find(u => u.__backendId === savedUserId);
+    if(user) {
+      currentUser = user;
+      isLoggedIn = true;
+      renderCurrentTab();
+    } else {
+      showLoginScreen();
+    }
+  } else {
+    showLoginScreen();
+  }
+})();
+
+// ===== HELPERS =====
+function showToast(msg) {
+  const c = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(()=>t.remove(), 2600);
+}
+
+function getUserRecipes() { 
+  return allRecipes.filter(r=> r.type==='recipe' && r.author === (currentUser?.user_name || 'You')); 
+}
+
+function getPublishedRecipes() { 
+  return allRecipes.filter(r => r.type==='recipe' && r.published); 
+}
+
+function timeAgo(iso) {
+  if(!iso) return '';
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff/60000);
+  if(mins < 1) return 'just now';
+  if(mins < 60) return mins+'m ago';
+  const hrs = Math.floor(mins/60);
+  if(hrs < 24) return hrs+'h ago';
+  return Math.floor(hrs/24)+'d ago';
+}
+
+// ===== TAB SWITCHING =====
+function switchTab(tab) {
+  if(!isLoggedIn) return;
+  currentTab = tab;
+  document.querySelectorAll('.nav-btn').forEach(b => {
+    const isActive = b.dataset.tab === tab;
+    b.style.color = isActive ? '#ff964f' : '#999';
+  });
+  renderCurrentTab();
+}
+
+function renderCurrentTab() {
+  if(!isLoggedIn || !currentUser) {
+    showLoginScreen();
+    return;
+  }
+  const el = document.getElementById('tab-content');
+  switch(currentTab) {
+    case 'home': renderHome(el); break;
+    case 'my-recipes': renderMyRecipes(el); break;
+    case 'feed': renderFeed(el); break;
+    case 'profile': renderProfile(el); break;
+  }
+  lucide.createIcons();
+}
+
+// ===== LOGIN SCREEN =====
+function showLoginScreen() {
+  const el = document.getElementById('tab-content');
+  el.innerHTML = `
+    <div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px;text-align:center">
+      <h1 style="font-size:32px;font-weight:bold;margin-bottom:8px;font-family:'Playfair Display',serif">MakeMe</h1>
+      <p style="opacity:0.6;margin-bottom:40px">Cook. Share. Discover.</p>
+      
+      <div style="width:100%;max-width:400px">
+        <div style="background:#fff;border-radius:16px;padding:30px;box-shadow:0 2px 12px rgba(255,150,79,0.08)">
+          <h2 style="font-size:18px;font-weight:bold;margin-bottom:20px">Welcome to MakeMe</h2>
+          
+          <button onclick="showNewUserForm()" style="width:100%;padding:14px;background:linear-gradient(135deg,#ff964f,#ff6b2b);color:#fff;border:none;border-radius:12px;font-weight:bold;font-size:16px;margin-bottom:12px;cursor:pointer">Create Account</button>
+          
+          <div style="text-align:center;margin:16px 0;opacity:0.4">or</div>
+          
+          <button onclick="showLoginForm()" style="width:100%;padding:14px;background:#fff3e8;color:#ff964f;border:2px solid #ff964f;border-radius:12px;font-weight:bold;font-size:16px;cursor:pointer">Login</button>
+          
+          <p style="font-size:12px;opacity:0.5;margin-top:20px">Your account is private and secure in MakeMe</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function showNewUserForm() {
+  const el = document.getElementById('tab-content');
+  el.innerHTML = `
+    <div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px">
+      <button onclick="showLoginScreen()" style="align-self:flex-start;width:40px;height:40px;border-radius:50%;background:#f0f0f0;border:none;font-size:20px;cursor:pointer;margin-bottom:20px">←</button>
+      
+      <div style="width:100%;max-width:400px">
+        <div style="background:#fff;border-radius:16px;padding:30px;box-shadow:0 2px 12px rgba(255,150,79,0.08)">
+          <h2 style="font-size:20px;font-weight:bold;margin-bottom:25px;font-family:'Playfair Display',serif">Create Your Account</h2>
+          
+          <label style="display:block;font-weight:600;font-size:14px;margin-bottom:8px">Username</label>
+          <input id="new-username" type="text" placeholder="Choose a username" style="width:100%;padding:12px;border:2px solid #f0f0f0;border-radius:10px;font-size:14px;margin-bottom:16px;font-family:inherit;box-sizing:border-box" />
+          
+          <label style="display:block;font-weight:600;font-size:14px;margin-bottom:8px">4-Digit PIN</label>
+          <input id="new-pin" type="text" inputmode="numeric" maxlength="4" placeholder="0000" style="width:100%;padding:12px;border:2px solid #f0f0f0;border-radius:10px;font-size:14px;margin-bottom:8px;font-family:inherit;box-sizing:border-box;letter-spacing:4px;text-align:center" />
+          <p style="font-size:12px;opacity:0.5;margin-bottom:20px">You'll use this PIN to login later</p>
+          
+          <select id="new-tier" style="width:100%;padding:12px;border:2px solid #f0f0f0;border-radius:10px;font-size:14px;margin-bottom:20px;font-family:inherit">
+            <option value="personal">Personal - Create & use recipes</option>
+            <option value="cook">Cook - Also publish recipes</option>
+            <option value="expert">Expert - Expert-only features</option>
+          </select>
+          
+          <button onclick="createNewUser()" style="width:100%;padding:14px;background:linear-gradient(135deg,#ff964f,#ff6b2b);color:#fff;border:none;border-radius:12px;font-weight:bold;font-size:16px;cursor:pointer;margin-bottom:12px">Create Account</button>
+          
+          <p id="new-error" style="color:#d32f2f;font-size:12px;margin-top:12px;display:none"></p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function showLoginForm() {
+  const el = document.getElementById('tab-content');
+  el.innerHTML = `
+    <div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px">
+      <button onclick="showLoginScreen()" style="align-self:flex-start;width:40px;height:40px;border-radius:50%;background:#f0f0f0;border:none;font-size:20px;cursor:pointer;margin-bottom:20px">←</button>
+      
+      <div style="width:100%;max-width:400px">
+        <div style="background:#fff;border-radius:16px;padding:30px;box-shadow:0 2px 12px rgba(255,150,79,0.08)">
+          <h2 style="font-size:20px;font-weight:bold;margin-bottom:25px;font-family:'Playfair Display',serif">Login</h2>
+          
+          <label style="display:block;font-weight:600;font-size:14px;margin-bottom:8px">Username</label>
+          <input id="login-username" type="text" placeholder="Your username" style="width:100%;padding:12px;border:2px solid #f0f0f0;border-radius:10px;font-size:14px;margin-bottom:16px;font-family:inherit;box-sizing:border-box" />
+          
+          <label style="display:block;font-weight:600;font-size:14px;margin-bottom:8px">4-Digit PIN</label>
+          <input id="login-pin" type="text" inputmode="numeric" maxlength="4" placeholder="0000" style="width:100%;padding:12px;border:2px solid #f0f0f0;border-radius:10px;font-size:14px;margin-bottom:20px;font-family:inherit;box-sizing:border-box;letter-spacing:4px;text-align:center" />
+          
+          <button onclick="loginUser()" style="width:100%;padding:14px;background:linear-gradient(135deg,#ff964f,#ff6b2b);color:#fff;border:none;border-radius:12px;font-weight:bold;font-size:16px;cursor:pointer;margin-bottom:12px">Login</button>
+          
+          <p id="login-error" style="color:#d32f2f;font-size:12px;margin-top:12px;display:none"></p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function createNewUser() {
+  const username = document.getElementById('new-username').value.trim();
+  const pin = document.getElementById('new-pin').value.trim();
+  const tier = document.getElementById('new-tier').value;
+  const errEl = document.getElementById('new-error');
+  
+  if(!username) { errEl.textContent = 'Username is required'; errEl.style.display = 'block'; return; }
+  if(username.length < 3) { errEl.textContent = 'Username must be at least 3 characters'; errEl.style.display = 'block'; return; }
+  if(!/^\d{4}$/.test(pin)) { errEl.textContent = 'PIN must be exactly 4 digits'; errEl.style.display = 'block'; return; }
+  
+  // Check if username already exists
+  if(allUsers.find(u => u.user_name === username)) {
+    errEl.textContent = 'Username already taken'; 
+    errEl.style.display = 'block'; 
+    return;
+  }
+  
+  const userData = {
+    type: 'user',
+    user_name: username,
+    user_pin: pin,
+    user_tier: tier,
+    user_avatar_url: DEFAULT_AVATAR,
+    user_restaurant: '',
+    user_food_type: '',
+    created_at: new Date().toISOString()
+  };
+  
+  const result = await window.dataSdk.create(userData);
+  if(result.isOk) {
+    showToast('Account created! Logging in...');
+    // Wait for data update then login
+    setTimeout(() => {
+      const newUser = allUsers.find(u => u.user_name === username && u.user_pin === pin);
+      if(newUser) {
+        currentUser = newUser;
+        isLoggedIn = true;
+        localStorage.setItem('makeme_user_id', newUser.__backendId);
+        currentTab = 'home';
+        renderCurrentTab();
+      }
+    }, 500);
+  } else {
+    errEl.textContent = 'Failed to create account';
+    errEl.style.display = 'block';
+  }
+}
+
+function loginUser() {
+  const username = document.getElementById('login-username').value.trim();
+  const pin = document.getElementById('login-pin').value.trim();
+  const errEl = document.getElementById('login-error');
+  
+  if(!username || !pin) { errEl.textContent = 'Username and PIN required'; errEl.style.display = 'block'; return; }
+  
+  const user = allUsers.find(u => u.user_name === username && u.user_pin === pin);
+  if(!user) { errEl.textContent = 'Invalid username or PIN'; errEl.style.display = 'block'; return; }
+  
+  currentUser = user;
+  isLoggedIn = true;
+  localStorage.setItem('makeme_user_id', user.__backendId);
+  currentTab = 'home';
+  showToast('Welcome back!');
+  renderCurrentTab();
+}
+
+function logout() {
+  currentUser = null;
+  isLoggedIn = false;
+  localStorage.removeItem('makeme_user_id');
+  showLoginScreen();
+}
+function renderHome(el) {
+  const myRecipes = getUserRecipes();
+  const published = myRecipes.filter(r=>r.published);
+  const recent = myRecipes.slice(-3).reverse();
+  const cfg = window.elementSdk.config || defaultConfig;
+  const title = cfg.app_title || defaultConfig.app_title;
+  const tagline = cfg.tagline || defaultConfig.tagline;
+
+  el.innerHTML = `
+    <div class="p-5 pb-2">
+      <div class="flex items-center gap-3 mb-4">
+        <img src="${currentUser.user_avatar_url||DEFAULT_AVATAR}" alt="avatar" class="w-12 h-12 rounded-full" style="object-fit:cover;cursor:pointer" onclick="switchTab('profile')" />
+        <div class="flex-1">
+          <h1 id="home-title" class="text-2xl font-bold" style="font-family:'Playfair Display',serif">${title}</h1>
+          <p id="home-tagline" class="text-sm opacity-60">${tagline}</p>
+        </div>
+        <div class="pill ${currentUser.user_tier==='expert'?'pill-expert':currentUser.user_tier==='cook'?'pill-cook':'pill-personal'}">${currentUser.user_tier.charAt(0).toUpperCase()+currentUser.user_tier.slice(1)}</div>
+      </div>
+
+      ${recent.length > 0 ? `
+      <h2 class="font-bold text-lg mb-3 mt-5" style="font-family:'Playfair Display',serif">Recent Recipes</h2>
+      <div class="flex gap-3 overflow-x-auto pb-3" style="scrollbar-width:none">
+        ${recent.map(r=>`
+          <div class="recipe-card flex-shrink-0" style="width:180px" onclick="openRecipeDetail('${r.__backendId}')">
+            <div style="width:100%;height:140px;display:flex;align-items:center;justify-content:center;font-size:64px;background:linear-gradient(135deg,#fff3e8,#ffe8d4)"><img src="${r.image_url||DEFAULT_AVATAR}" alt="recipe" style="width:100%;height:100%;object-fit:cover" /></div>
+            <div class="p-3">
+              <p class="font-bold text-sm truncate">${r.title}</p>
+              <p class="text-xs opacity-50 mt-1">${r.cook_time} min • ${r.category}</p>
+            </div>
+          </div>
+        `).join('')}
+      </div>` : ''}
+
+      ${published.length > 0 ? `
+      <h2 class="font-bold text-lg mb-3 mt-4" style="font-family:'Playfair Display',serif">Your Published</h2>
+      <div class="flex gap-3 overflow-x-auto pb-3" style="scrollbar-width:none">
+        ${published.map(r=>`
+          <div class="recipe-card flex-shrink-0" style="width:180px" onclick="openRecipeDetail('${r.__backendId}')">
+            <div style="width:100%;height:140px;display:flex;align-items:center;justify-content:center;font-size:64px;background:linear-gradient(135deg,#fff3e8,#ffe8d4)"><img src="${r.image_url||DEFAULT_AVATAR}" alt="recipe" style="width:100%;height:100%;object-fit:cover" /></div>
+            <div class="p-3">
+              <p class="font-bold text-sm truncate">${r.title}</p>
+              <p class="text-xs opacity-50 mt-1">Rating: ${r.rating||'—'}</p>
+            </div>
+          </div>
+        `).join('')}
+      </div>` : ''}
+
+      ${myRecipes.length === 0 ? `
+      <div class="text-center py-8 opacity-60 mt-12">
+        <div class="text-5xl mb-3">📖</div>
+        <p class="font-semibold">No recipes yet!</p>
+        <p class="text-sm mt-1">Tap "My Recipes" to create your first recipe</p>
+      </div>` : ''}
+    </div>
+  `;
+}
+
+// ===== MY RECIPES TAB =====
+function renderMyRecipes(el) {
+  const myRecipes = getUserRecipes();
+  const canPublish = currentUser.user_tier === 'cook' || currentUser.user_tier === 'expert';
+
+  el.innerHTML = `
+    <div class="p-5">
+      <div class="flex items-center justify-between mb-5">
+        <h1 class="text-2xl font-bold" style="font-family:'Playfair Display',serif">My Recipes</h1>
+        <button onclick="openCreateRecipe()" class="bg-accent text-white px-4 py-2 rounded-full font-semibold text-sm flex items-center gap-2 shadow-lg" style="background:#ff964f">
+          <i data-lucide="plus" style="width:16px;height:16px"></i> New
+        </button>
+      </div>
+
+      ${myRecipes.length === 0 ? `
+      <div class="text-center py-16 opacity-50">
+        <div class="text-6xl mb-4">Recipe Book</div>
+        <p class="font-semibold text-lg">Your recipe book is empty</p>
+        <p class="text-sm mt-2">Create your first recipe to get started!</p>
+      </div>` : `
+      <div class="space-y-3">
+        ${myRecipes.reverse().map(r=>`
+          <div class="recipe-card p-4 flex gap-4 items-center" onclick="openRecipeDetail('${r.__backendId}')">
+            <img src="${r.image_url||DEFAULT_AVATAR}" alt="recipe" class="w-16 h-16 rounded-2xl" style="object-fit:cover;flex-shrink:0" />
+            <div class="flex-1 min-w-0">
+              <p class="font-bold truncate">${r.title}</p>
+              <p class="text-xs opacity-50 mt-1">${r.category} • ${r.cook_time} min</p>
+              <div class="flex gap-2 mt-2">
+                ${r.published ? '<span class="pill pill-cook" style="font-size:10px">Published</span>' : '<span class="pill pill-personal" style="font-size:10px">Private</span>'}
+              </div>
+            </div>
+            <i data-lucide="chevron-right" style="width:20px;height:20px;opacity:0.3"></i>
+          </div>
+        `).join('')}
+      </div>`}
+    </div>
+  `;
+  lucide.createIcons();
+}
+
+// ===== FEED TAB =====
+function renderFeed(el) {
+  const allFeed = getPublishedRecipes();
+  const discover = allFeed.filter(r=> r.author_tier !== 'expert' || r.author_tier === 'cook');
+  const expert = allFeed.filter(r=> r.author_tier === 'expert');
+
+  el.innerHTML = `
+    <div class="p-5">
+      <h1 class="text-2xl font-bold mb-4" style="font-family:'Playfair Display',serif">Feed</h1>
+      <div class="relative mb-4">
+        <i data-lucide="search" style="width:18px;height:18px;position:absolute;left:14px;top:50%;transform:translateY(-50%);opacity:0.4"></i>
+        <input id="feed-search" type="text" placeholder="Search recipes, ingredients, keywords..." class="w-full py-3 pl-11 pr-4 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:border-orange-300" oninput="filterFeed()">
+      </div>
+      <div class="flex gap-2 mb-5">
+        <div class="sub-tab ${feedSubTab==='discover'?'active':''}" onclick="feedSubTab='discover';renderFeed(document.getElementById('tab-content'))">Discover</div>
+        <div class="sub-tab ${feedSubTab==='expert'?'active':''}" onclick="feedSubTab='expert';renderFeed(document.getElementById('tab-content'))">Expert Recipes</div>
+      </div>
+      <div id="feed-list" class="space-y-4 pb-4">
+        ${renderFeedList(feedSubTab==='expert' ? expert : discover)}
+      </div>
+    </div>
+  `;
+  lucide.createIcons();
+}
+
+function renderFeedList(recipes) {
+  if(recipes.length === 0) return '<div class="text-center py-12 opacity-50"><div class="text-5xl mb-3">Searching</div><p>No recipes found</p></div>';
+  return recipes.map(r => {
+    return `
+    <div class="recipe-card" onclick="openRecipeDetail('${r.__backendId}')">
+      <img src="${r.image_url||DEFAULT_AVATAR}" alt="recipe" style="width:100%;height:140px;object-fit:cover" />
+      <div class="p-4">
+        <div class="flex items-start justify-between">
+          <div class="flex-1 min-w-0">
+            <p class="font-bold text-lg">${r.title}</p>
+            <p class="text-sm opacity-60 mt-1 line-clamp-2">${r.description}</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-3 mt-3">
+          <span class="pill ${r.author_tier==='expert'?'pill-expert':r.author_tier==='cook'?'pill-cook':'pill-personal'}">${r.author}</span>
+          <span class="text-xs opacity-50">${r.cook_time} min</span>
+          <span class="text-xs opacity-50">Rating: ${r.rating||'—'} ${r.rating_count ? '('+r.rating_count+')' : ''}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function filterFeed() {
+  const q = document.getElementById('feed-search').value.toLowerCase();
+  const allFeed = getPublishedRecipes();
+  const source = feedSubTab === 'expert' ? allFeed.filter(r=>r.author_tier==='expert') : allFeed.filter(r=> r.author_tier !== 'expert');
+  const filtered = q ? source.filter(r => {
+    const searchable = `${r.title} ${r.description||''} ${r.keywords||''} ${r.category||''} ${r.ingredients||''} ${r.author}`.toLowerCase();
+    return searchable.includes(q);
+  }) : source;
+  document.getElementById('feed-list').innerHTML = renderFeedList(filtered);
+  lucide.createIcons();
+}
+
+// ===== PROFILE TAB =====
+function renderProfile(el) {
+  const viewingOwnProfile = !window.viewingUserId || window.viewingUserId === currentUser.__backendId;
+  const viewUser = viewingOwnProfile ? currentUser : allUsers.find(u => u.__backendId === window.viewingUserId);
+  
+  if(!viewUser) {
+    el.innerHTML = '<div class="p-5 text-center opacity-50 py-12">User not found</div>';
+    return;
+  }
+
+  const userRecipes = allRecipes.filter(r => r.author === viewUser.user_name && r.published).length;
+  const followers = JSON.parse(viewUser.followers || '[]');
+  const following = JSON.parse(viewUser.following || '[]');
+  const friends = JSON.parse(viewUser.friends || '[]');
+  
+  const isFollowedByCurrentUser = followers.includes(currentUser.user_name);
+  const isFriendOfCurrentUser = friends.includes(currentUser.user_name);
+  
+  const showFollowers = viewUser.show_followers !== false;
+  const showInFollowers = viewUser.show_in_followers !== false;
+
+  el.innerHTML = `
+    <div class="p-5">
+      <!-- Header with back/settings -->
+      <div class="flex items-center justify-between mb-6">
+        ${!viewingOwnProfile ? `<button onclick="window.viewingUserId=null;switchTab('profile')" class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center"><i data-lucide="arrow-left" style="width:18px;height:18px"></i></button>` : '<div></div>'}
+        ${viewingOwnProfile ? `<button onclick="openSettings()" class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center"><i data-lucide="settings" style="width:18px;height:18px"></i></button>` : '<div></div>'}
+      </div>
+
+      <!-- Profile header -->
+      <div class="flex gap-4 mb-6 items-start">
+        <img src="${viewUser.user_avatar_url||DEFAULT_AVATAR}" alt="avatar" class="w-20 h-20 rounded-full" style="object-fit:cover;flex-shrink:0" />
+        <div class="flex-1">
+          <h1 class="text-2xl font-bold">${viewUser.user_name}</h1>
+          <div class="pill ${viewUser.user_tier==='expert'?'pill-expert':viewUser.user_tier==='cook'?'pill-cook':'pill-personal'} mt-2">${viewUser.user_tier.charAt(0).toUpperCase()+viewUser.user_tier.slice(1)}</div>
+          ${viewUser.user_tier==='expert' && viewUser.user_restaurant ? `<p class="text-sm mt-2 opacity-60">${viewUser.user_restaurant}</p>` : ''}
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="flex justify-around mb-6 recipe-card p-4">
+        <div class="text-center">
+          <p class="text-2xl font-bold">${userRecipes}</p>
+          <p class="text-xs opacity-60 mt-1">Recipes</p>
+        </div>
+        ${showFollowers ? `
+        <div class="text-center">
+          <p class="text-2xl font-bold">${followers.length}</p>
+          <p class="text-xs opacity-60 mt-1">Followers</p>
+        </div>` : ''}
+        <div class="text-center">
+          <p class="text-2xl font-bold">${friends.length}</p>
+          <p class="text-xs opacity-60 mt-1">Friends</p>
+        </div>
+      </div>
+
+      <!-- Action buttons -->
+      ${!viewingOwnProfile ? `
+      <div class="flex gap-2 mb-6">
+        <button onclick="toggleFollow('${viewUser.__backendId}')" class="flex-1 py-3 rounded-xl font-semibold transition-all ${isFollowedByCurrentUser ? 'bg-gray-100 text-gray-700' : 'bg-orange-100 text-orange-600'}" style="${!isFollowedByCurrentUser ? 'background:linear-gradient(135deg,#ff964f,#ff6b2b);color:#fff' : ''}">
+          ${isFollowedByCurrentUser ? 'Unfollow' : 'Follow'}
+        </button>
+        <button onclick="toggleFriend('${viewUser.__backendId}')" class="flex-1 py-3 rounded-xl font-semibold transition-all ${isFriendOfCurrentUser ? 'bg-gray-100 text-gray-700' : 'bg-blue-100 text-blue-600'}">
+          ${isFriendOfCurrentUser ? 'Unfriend' : 'Add Friend'}
+        </button>
+      </div>
+      ` : ''}
+
+      <!-- Recipes section -->
+      <h2 class="font-bold text-lg mb-3">Published Recipes</h2>
+      ${allRecipes.filter(r => r.author === viewUser.user_name && r.published).length === 0 ? `
+      <div class="text-center py-8 opacity-50">
+        <p class="text-sm">No recipes published yet</p>
+      </div>` : `
+      <div class="space-y-3">
+        ${allRecipes.filter(r => r.author === viewUser.user_name && r.published).map(r=>`
+          <div class="recipe-card p-4 flex gap-3 cursor-pointer" onclick="openRecipeDetail('${r.__backendId}')">
+            <img src="${r.image_url||DEFAULT_AVATAR}" alt="recipe" class="w-12 h-12 rounded-lg" style="object-fit:cover;flex-shrink:0" />
+            <div class="flex-1 min-w-0">
+              <p class="font-bold text-sm truncate">${r.title}</p>
+              <p class="text-xs opacity-50 mt-1">${r.cook_time} min</p>
+            </div>
+          </div>
+        `).join('')}
+      </div>`}
+
+      ${viewingOwnProfile ? `
+      <!-- Logout and Delete buttons -->
+      <div class="mt-8 border-t pt-6 space-y-3">
+        <button onclick="showLogoutConfirm()" class="w-full py-3 rounded-xl font-semibold bg-orange-50 text-orange-600">
+          Logout
+        </button>
+        <button onclick="showDeleteConfirm()" class="w-full py-3 rounded-xl font-semibold bg-red-50 text-red-600">
+          Delete Account
+        </button>
+      </div>` : ''}
+    </div>
+  `;
+  lucide.createIcons();
+}
+
+function openSettings() {
+  const overlay = document.getElementById('modal-overlay');
+  overlay.style.display = 'flex';
+  overlay.innerHTML = `
+    <div class="modal-sheet">
+      <div class="flex items-center justify-between mb-5">
+        <h2 class="text-xl font-bold">Settings</h2>
+        <button onclick="closeModal()" class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center"><i data-lucide="x" style="width:18px;height:18px"></i></button>
+      </div>
+
+      <!-- Profile Section -->
+      <h3 class="font-bold text-lg mb-3">Profile</h3>
+      <div class="recipe-card p-5 mb-4">
+        <label class="block text-sm font-semibold mb-2">Profile Picture</label>
+        <input id="prof-photo" type="file" accept="image/*" class="w-full p-2 rounded-lg border border-gray-200 text-sm mb-3 focus:outline-none" onchange="updatePhoto()">
+        
+        <label class="block text-sm font-semibold mb-2">Display Name</label>
+        <input id="prof-name" value="${currentUser.user_name}" class="w-full p-3 rounded-lg border border-gray-200 text-sm mb-3 focus:outline-none focus:border-orange-300">
+        
+        <button onclick="saveProfileSettings()" class="w-full bg-accent text-white py-3 rounded-lg font-semibold" style="background:#ff964f">Save Profile</button>
+      </div>
+
+      <!-- Privacy Section -->
+      <h3 class="font-bold text-lg mb-3">Privacy</h3>
+      <div class="recipe-card p-4 space-y-3 mb-4">
+        <label class="flex items-center gap-3 cursor-pointer">
+          <input type="checkbox" id="show-followers" ${currentUser.show_followers !== false ? 'checked' : ''} class="w-5 h-5 accent-orange-400">
+          <span class="text-sm">Show who follows me</span>
+        </label>
+        <label class="flex items-center gap-3 cursor-pointer">
+          <input type="checkbox" id="show-in-followers" ${currentUser.show_in_followers !== false ? 'checked' : ''} class="w-5 h-5 accent-orange-400">
+          <span class="text-sm">Appear in followers lists</span>
+        </label>
+      </div>
+
+      <!-- Voice Section -->
+      <h3 class="font-bold text-lg mb-3">MakeMe Voice</h3>
+      <div class="recipe-card p-4 space-y-2 mb-4">
+        ${[
+          {id:'female-american',label:'Female American',lang:'en-US'},
+          {id:'male-american',label:'Male American',lang:'en-US'},
+          {id:'female-british',label:'Female British',lang:'en-GB'},
+          {id:'male-british',label:'Male British',lang:'en-GB'},
+          {id:'female-australian',label:'Female Australian',lang:'en-AU'},
+          {id:'male-australian',label:'Male Australian',lang:'en-AU'}
+        ].map(v=>`
+          <button onclick="changeVoice('${v.id}')" class="w-full p-3 rounded-lg text-left border-2 transition-all ${currentUser.voice===v.id?'border-orange-400 bg-orange-50':'border-gray-200'} flex items-center justify-between">
+            <span class="text-sm font-semibold">${v.label}</span>
+            ${currentUser.voice===v.id?'<span class="text-orange-500">✓</span>':''}
+          </button>
+        `).join('')}
+      </div>
+
+      <!-- Account Section -->
+      <h3 class="font-bold text-lg mb-3">Account</h3>
+      <div class="recipe-card p-4 space-y-3 mb-4">
+        <select id="tier-select" class="w-full p-3 rounded-lg border border-gray-200 text-sm focus:outline-none">
+          ${['personal','cook','expert'].map(t=>`<option value="${t}" ${currentUser.user_tier===t?'selected':''}>${t.charAt(0).toUpperCase()+t.slice(1)}</option>`).join('')}
+        </select>
+        <button onclick="changeTier()" class="w-full bg-accent text-white py-3 rounded-lg font-semibold" style="background:#ff964f">Change Tier</button>
+      </div>
+
+      <button onclick="saveAllSettings()" class="w-full bg-accent text-white py-3 rounded-lg font-bold" style="background:linear-gradient(135deg,#ff964f,#ff6b2b)">Done</button>
+    </div>
+  `;
+  lucide.createIcons();
+}
+
+async function saveProfileSettings() {
+  const newName = document.getElementById('prof-name').value.trim();
+  if(newName.length < 2) { showToast('Name must be at least 2 characters'); return; }
+  currentUser.user_name = newName;
+  
+  const result = await window.dataSdk.update(currentUser);
+  if(result.isOk) {
+    showToast('Profile updated!');
+    renderProfile(document.getElementById('tab-content'));
+  } else {
+    showToast('Failed to update profile');
+  }
+}
+
+async function saveAllSettings() {
+  currentUser.show_followers = document.getElementById('show-followers').checked;
+  currentUser.show_in_followers = document.getElementById('show-in-followers').checked;
+  
+  const result = await window.dataSdk.update(currentUser);
+  if(result.isOk) {
+    showToast('Settings saved!');
+    closeModal();
+  } else {
+    showToast('Failed to save settings');
+  }
+}
+
+async function changeTier() {
+  const tier = document.getElementById('tier-select').value;
+  currentUser.user_tier = tier;
+  const result = await window.dataSdk.update(currentUser);
+  if(result.isOk) {
+    showToast(`Changed to ${tier} account`);
+  }
+}
+
+async function changeVoice(voice) {
+  currentUser.voice = voice;
+  const result = await window.dataSdk.update(currentUser);
+  if(result.isOk) {
+    showToast('Voice updated!');
+    // Test the voice
+    const SR = window.SpeechSynthesisUtterance;
+    if(SR) {
+      const utt = new SR(`Hello. I'm MakeMe`);
+      const parts = voice.split('-');
+      const gender = parts[0];
+      const accent = parts[1];
+      let lang = 'en-US';
+      if(accent==='british') lang = 'en-GB';
+      if(accent==='australian') lang = 'en-AU';
+      utt.lang = lang;
+      utt.pitch = gender === 'female' ? 1.1 : 0.9;
+      utt.rate = 0.9;
+      if(window.speechSynthesis) window.speechSynthesis.speak(utt);
+    }
+    openSettings();
+  }
+}
+
+function showLogoutConfirm() {
+  const overlay = document.getElementById('modal-overlay');
+  overlay.style.display = 'flex';
+  overlay.innerHTML = `
+    <div class="modal-sheet">
+      <h2 class="text-xl font-bold mb-4">Logout</h2>
+      <p class="text-sm opacity-70 mb-4">Your PIN to sign back in:</p>
+      <div class="recipe-card p-5 mb-6 text-center">
+        <p style="font-family:monospace;font-size:24px;letter-spacing:8px;font-weight:bold;color:#ff964f">${currentUser.user_pin}</p>
+        <p class="text-xs opacity-50 mt-2">Save this PIN to login later</p>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="closeModal()" class="flex-1 py-3 bg-gray-200 rounded-lg font-semibold">Cancel</button>
+        <button onclick="doLogout()" class="flex-1 py-3 bg-orange-500 text-white rounded-lg font-semibold">Logout</button>
+      </div>
+    </div>
+  `;
+}
+
+function showDeleteConfirm() {
+  const overlay = document.getElementById('modal-overlay');
+  overlay.style.display = 'flex';
+  overlay.innerHTML = `
+    <div class="modal-sheet">
+      <h2 class="text-xl font-bold mb-4 text-red-600">Delete Account</h2>
+      <p class="text-sm opacity-70 mb-4">This action cannot be undone. You will lose:</p>
+      <ul class="text-sm opacity-70 mb-6 space-y-2 ml-4">
+        <li>• All your recipes</li>
+        <li>• All your friends</li>
+        <li>• Your pin cannot be used to login again</li>
+      </ul>
+      <div class="flex gap-2">
+        <button onclick="closeModal()" class="flex-1 py-3 bg-gray-200 rounded-lg font-semibold">Cancel</button>
+        <button onclick="doDeleteAccount()" class="flex-1 py-3 bg-red-600 text-white rounded-lg font-semibold">Delete Permanently</button>
+      </div>
+    </div>
+  `;
+}
+
+async function doLogout() {
+  logout();
+}
+
+async function doDeleteAccount() {
+  // Delete all user recipes
+  const userRecipes = allRecipes.filter(r => r.author === currentUser.user_name);
+  for(let recipe of userRecipes) {
+    await window.dataSdk.delete(recipe);
+  }
+  
+  // Delete the user account
+  const result = await window.dataSdk.delete(currentUser);
+  if(result.isOk) {
+    showToast('Account deleted');
+    logout();
+  } else {
+    showToast('Failed to delete account');
+  }
+}
+
+async function toggleFollow(userId) {
+  const targetUser = allUsers.find(u => u.__backendId === userId);
+  if(!targetUser) return;
+  
+  const followers = JSON.parse(targetUser.followers || '[]');
+  if(followers.includes(currentUser.user_name)) {
+    followers.splice(followers.indexOf(currentUser.user_name), 1);
+  } else {
+    followers.push(currentUser.user_name);
+  }
+  targetUser.followers = JSON.stringify(followers);
+  
+  const result = await window.dataSdk.update(targetUser);
+  if(result.isOk) {
+    showToast(followers.includes(currentUser.user_name) ? 'Following!' : 'Unfollowed');
+    renderProfile(document.getElementById('tab-content'));
+  }
+}
+
+async function toggleFriend(userId) {
+  const targetUser = allUsers.find(u => u.__backendId === userId);
+  if(!targetUser) return;
+  
+  const friends = JSON.parse(targetUser.friends || '[]');
+  if(friends.includes(currentUser.user_name)) {
+    friends.splice(friends.indexOf(currentUser.user_name), 1);
+  } else {
+    friends.push(currentUser.user_name);
+  }
+  targetUser.friends = JSON.stringify(friends);
+  
+  const result = await window.dataSdk.update(targetUser);
+  if(result.isOk) {
+    showToast(friends.includes(currentUser.user_name) ? 'Friend added!' : 'Friend removed');
+    renderProfile(document.getElementById('tab-content'));
+  }
+}
+
+// ===== EXPERT APPLICATION =====
+function openExpertApplication() {
+  if(currentUser.user_tier === 'expert') return;
+  const overlay = document.getElementById('modal-overlay');
+  overlay.style.display = 'flex';
+  overlay.innerHTML = `
+    <div class="modal-sheet">
+      <div class="flex items-center justify-between mb-5">
+        <h2 class="text-xl font-bold" style="font-family:'Playfair Display',serif">Apply for Expert Account</h2>
+        <button onclick="closeModal()" class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center"><i data-lucide="x" style="width:18px;height:18px"></i></button>
+      </div>
+      <form onsubmit="submitExpertApp(event)">
+        <label class="block text-sm font-semibold mb-1">Restaurant / Company Name *</label>
+        <input id="exp-restaurant" required class="w-full p-3 rounded-xl border border-gray-200 text-sm mb-3 focus:outline-none focus:border-orange-300" placeholder="e.g. Mario's Italian Kitchen">
+        <label class="block text-sm font-semibold mb-1">Type of Food *</label>
+        <input id="exp-foodtype" required class="w-full p-3 rounded-xl border border-gray-200 text-sm mb-3 focus:outline-none focus:border-orange-300" placeholder="e.g. Italian, BBQ, Fusion">
+        <button type="submit" class="w-full bg-accent text-white py-3 rounded-xl font-bold text-lg" style="background:linear-gradient(135deg,#ff964f,#ff6b2b)">Submit Application</button>
+      </form>
+    </div>
+  `;
+  lucide.createIcons();
+}
+
+async function submitExpertApp(e) {
+  e.preventDefault();
+  currentUser.user_tier = 'expert';
+  currentUser.user_restaurant = document.getElementById('exp-restaurant').value;
+  currentUser.user_food_type = document.getElementById('exp-foodtype').value;
+  
+  const result = await window.dataSdk.update(currentUser);
+  if(result.isOk) {
+    closeModal();
+    showToast('Expert account activated!');
+    renderProfile(document.getElementById('tab-content'));
+  } else {
+    showToast('Failed to upgrade account');
+  }
+}
+
+// ===== CREATE RECIPE =====
+function openCreateRecipe() {
+  const overlay = document.getElementById('modal-overlay');
+  overlay.style.display = 'flex';
+  const canPublish = currentUser.user_tier === 'cook' || currentUser.user_tier === 'expert';
+  overlay.innerHTML = `
+    <div class="modal-sheet">
+      <div class="flex items-center justify-between mb-5">
+        <h2 class="text-xl font-bold" style="font-family:'Playfair Display',serif">New Recipe</h2>
+        <button onclick="closeModal()" class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center"><i data-lucide="x" style="width:18px;height:18px"></i></button>
+      </div>
+      <form onsubmit="saveRecipe(event)">
+        <label class="block text-sm font-semibold mb-1">Recipe Title *</label>
+        <input id="cr-title" required class="w-full p-3 rounded-xl border border-gray-200 text-sm mb-3 focus:outline-none focus:border-orange-300" placeholder="e.g. Grandma's Pasta">
+        <label class="block text-sm font-semibold mb-1">Description</label>
+        <textarea id="cr-desc" rows="2" class="w-full p-3 rounded-xl border border-gray-200 text-sm mb-3 focus:outline-none focus:border-orange-300 resize-none" placeholder="Short description..."></textarea>
+        <label class="block text-sm font-semibold mb-1">Category</label>
+        <select id="cr-cat" class="w-full p-3 rounded-xl border border-gray-200 text-sm mb-3 focus:outline-none">
+          ${CATEGORIES.map(c=>`<option value="${c}">${c}</option>`).join('')}
+        </select>
+        <label class="block text-sm font-semibold mb-1">Cook Time (minutes) *</label>
+        <input id="cr-time" type="number" required min="1" class="w-full p-3 rounded-xl border border-gray-200 text-sm mb-3 focus:outline-none focus:border-orange-300" placeholder="30">
+        <label class="block text-sm font-semibold mb-1">Ingredients (one per line) *</label>
+        <textarea id="cr-ing" rows="4" required class="w-full p-3 rounded-xl border border-gray-200 text-sm mb-3 focus:outline-none focus:border-orange-300 resize-none" placeholder="2 cups flour\n1 egg\n..."></textarea>
+        <label class="block text-sm font-semibold mb-1">Steps (one per line) *</label>
+        <textarea id="cr-steps" rows="4" required class="w-full p-3 rounded-xl border border-gray-200 text-sm mb-3 focus:outline-none focus:border-orange-300 resize-none" placeholder="Preheat oven to 350°F\nMix dry ingredients\n..."></textarea>
+        <label class="block text-sm font-semibold mb-1">Keywords (comma separated)</label>
+        <input id="cr-keywords" class="w-full p-3 rounded-xl border border-gray-200 text-sm mb-3 focus:outline-none focus:border-orange-300" placeholder="pasta, easy, dinner">
+        
+        <label class="block text-sm font-semibold mb-1">Recipe Photo</label>
+        <input id="cr-photo" type="file" accept="image/*" class="w-full p-3 rounded-xl border border-gray-200 text-sm mb-4 focus:outline-none">
+
+        ${canPublish ? `
+        <label class="flex items-center gap-3 mb-4 cursor-pointer">
+          <input type="checkbox" id="cr-publish" class="w-5 h-5 accent-orange-400">
+          <span class="text-sm font-semibold">Publish to Feed</span>
+        </label>` : `<p class="text-xs opacity-50 mb-4">Upgrade to Cook or Expert to publish recipes</p>`}
+
+        <button type="submit" id="cr-submit" class="w-full bg-accent text-white py-3 rounded-xl font-bold text-lg" style="background:linear-gradient(135deg,#ff964f,#ff6b2b)">Save Recipe</button>
+      </form>
+    </div>
+  `;
+  lucide.createIcons();
+}
+
+async function saveRecipe(e) {
+  e.preventDefault();
+  if(allRecipes.length >= 999) { showToast('Storage limit reached!'); return; }
+  const btn = document.getElementById('cr-submit');
+  btn.disabled = true; btn.textContent = 'Saving...';
+  
+  const canPublish = currentUser.user_tier === 'cook' || currentUser.user_tier === 'expert';
+  const pub = canPublish && document.getElementById('cr-publish')?.checked;
+  
+  // Handle photo
+  let photoUrl = DEFAULT_AVATAR;
+  const photoInput = document.getElementById('cr-photo');
+  if(photoInput.files && photoInput.files[0]) {
+    const reader = new FileReader();
+    photoUrl = await new Promise((resolve) => {
+      reader.onload = (e) => resolve(e.target.result);
+      reader.readAsDataURL(photoInput.files[0]);
+    });
+  }
+
+  const recipe = {
+    type: 'recipe',
+    title: document.getElementById('cr-title').value,
+    description: document.getElementById('cr-desc').value,
+    ingredients: document.getElementById('cr-ing').value.split('\n').join('|'),
+    steps: document.getElementById('cr-steps').value.split('\n').join('|'),
+    cook_time: parseInt(document.getElementById('cr-time').value)||30,
+    category: document.getElementById('cr-cat').value,
+    keywords: document.getElementById('cr-keywords').value,
+    author: currentUser.user_name,
+    author_tier: currentUser.user_tier,
+    published: pub,
+    comments: '[]',
+    rating: 0,
+    rating_count: 0,
+    created_at: new Date().toISOString(),
+    image_url: photoUrl
+  };
+
+  const result = await window.dataSdk.create(recipe);
+  if(result.isOk) {
+    closeModal();
+    showToast(pub ? 'Recipe published!' : 'Recipe saved!');
+  } else {
+    btn.disabled = false; btn.textContent = 'Save Recipe';
+    showToast('Failed to save recipe');
+  }
+}
+
+// ===== RECIPE DETAIL =====
+function openRecipeDetail(backendId) {
+  const recipe = allRecipes.find(r => r.__backendId === backendId);
+  if(!recipe) return;
+  showRecipeDetail(recipe);
+}
+
+function showRecipeDetail(recipe) {
+  const overlay = document.getElementById('modal-overlay');
+  overlay.style.display = 'flex';
+  const ingredients = (recipe.ingredients||'').split('|').filter(Boolean);
+  const steps = (recipe.steps||'').split('|').filter(Boolean);
+  const comments = JSON.parse(recipe.comments||'[]');
+  const isOwner = recipe.author === currentUser.user_name;
+  const canPublish = (currentUser.user_tier==='cook'||currentUser.user_tier==='expert') && isOwner && !recipe.published;
+  const authorUser = allUsers.find(u => u.user_name === recipe.author);
+
+  overlay.innerHTML = `
+    <div class="modal-sheet" style="max-height:92%">
+      <div class="flex items-center justify-between mb-2">
+        <button onclick="closeModal()" class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center"><i data-lucide="arrow-left" style="width:18px;height:18px"></i></button>
+        <div class="flex gap-2">
+          ${canPublish ? `<button onclick="publishRecipe('${recipe.__backendId}')" class="px-4 py-2 rounded-full text-sm font-semibold text-white" style="background:linear-gradient(135deg,#ff964f,#ff6b2b)">Publish</button>` : ''}
+          ${isOwner ? `<button onclick="confirmDelete('${recipe.__backendId}')" class="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center text-red-500"><i data-lucide="trash-2" style="width:16px;height:16px"></i></button>` : ''}
+        </div>
+      </div>
+
+      <div class="text-center py-4">
+        <img src="${recipe.image_url||DEFAULT_AVATAR}" alt="recipe" class="w-24 h-24 rounded-2xl mx-auto" style="object-fit:cover" />
+        <h2 class="text-2xl font-bold mt-3" style="font-family:'Playfair Display',serif">${recipe.title}</h2>
+        <p class="text-sm opacity-60 mt-1">${recipe.description||''}</p>
+        
+        <!-- Author section -->
+        ${authorUser ? `
+        <div class="mt-4 flex items-center justify-center gap-3 recipe-card p-3 cursor-pointer" onclick="window.viewingUserId='${authorUser.__backendId}';closeModal();switchTab('profile')">
+          <img src="${authorUser.user_avatar_url||DEFAULT_AVATAR}" alt="author" class="w-10 h-10 rounded-full" style="object-fit:cover" />
+          <div class="text-left">
+            <p class="font-bold text-sm">${authorUser.user_name}</p>
+            <p class="text-xs opacity-50">View profile</p>
+          </div>
+        </div>` : ''}
+        
+        <div class="flex items-center justify-center gap-3 mt-3">
+          <span class="pill ${recipe.author_tier==='expert'?'pill-expert':recipe.author_tier==='cook'?'pill-cook':'pill-personal'}">${recipe.author}</span>
+          <span class="text-sm opacity-50">Time: ${recipe.cook_time} min</span>
+          <span class="text-sm opacity-50">Rating: ${recipe.rating||'—'}</span>
+        </div>
+      </div>
+
+      <div class="mt-4">
+        <h3 class="font-bold text-lg mb-2">Ingredients</h3>
+        <div class="space-y-2">
+          ${ingredients.map(i=>`<div class="flex items-center gap-2 p-2 rounded-xl bg-orange-50"><span class="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0"></span><span class="text-sm">${i.trim()}</span></div>`).join('')}
+        </div>
+      </div>
+
+      <div class="mt-5">
+        <h3 class="font-bold text-lg mb-2">Steps</h3>
+        <div class="space-y-3">
+          ${steps.map((s,i)=>`<div class="flex gap-3"><span class="w-7 h-7 rounded-full bg-orange-100 flex items-center justify-center text-sm font-bold flex-shrink-0" style="color:#ff964f">${i+1}</span><span class="text-sm pt-1">${s.trim()}</span></div>`).join('')}
+        </div>
+      </div>
+
+      <button onclick="startCooking('${recipe.__backendId}')" class="w-full mt-6 py-4 rounded-2xl text-white font-bold text-lg flex items-center justify-center gap-2" style="background:linear-gradient(135deg,#ff964f,#ff6b2b)">
+        <i data-lucide="flame" style="width:22px;height:22px"></i> Begin Cooking
+      </button>
+
+      <!-- Comments Section -->
+      <div class="mt-6 border-t pt-4">
+        <h3 class="font-bold text-lg mb-3">Comments (${comments.length})</h3>
+        ${comments.length > 0 ? comments.map(c=>`
+          <div class="mb-3 p-3 rounded-xl bg-gray-50">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="font-semibold text-sm">${c.user}</span>
+              <span class="text-xs opacity-40">${c.time||''}</span>
+            </div>
+            <p class="text-sm">${c.text}</p>
+          </div>
+        `).join('') : '<p class="text-sm opacity-40">No comments yet</p>'}
+
+        <div class="flex gap-2 mt-3">
+          <input id="comment-input" placeholder="Add a comment..." class="flex-1 p-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-orange-300">
+          <button onclick="addComment('${recipe.__backendId}')" class="px-4 rounded-xl text-white font-semibold" style="background:#ff964f">Post</button>
+        </div>
+      </div>
+
+      <!-- Rating -->
+      ${recipe.published ? `
+      <div class="mt-5 border-t pt-4 pb-4">
+        <h3 class="font-bold mb-2">Rate this Recipe</h3>
+        <div class="flex gap-1" id="star-rating">
+          ${[1,2,3,4,5].map(n=>`<span class="star text-3xl cursor-pointer" onclick="rateRecipe(${n},'${recipe.__backendId}')">${n<=Math.round(recipe.rating||0)?'★':'☆'}</span>`).join('')}
+        </div>
+      </div>` : ''}
+    </div>
+  `;
+  lucide.createIcons();
+}
+
+async function publishRecipe(backendId) {
+  const recipe = allRecipes.find(r=>r.__backendId===backendId);
+  if(!recipe) return;
+  recipe.published = true;
+  const result = await window.dataSdk.update(recipe);
+  if(result.isOk) {
+    closeModal();
+    showToast('Recipe published to Feed!');
+  } else { showToast('Failed to publish'); }
+}
+
+let deleteConfirmId = null;
+function confirmDelete(backendId) {
+  deleteConfirmId = backendId;
+  const btns = document.querySelector('.modal-sheet');
+  const existing = document.getElementById('delete-confirm');
+  if(existing) existing.remove();
+  const div = document.createElement('div');
+  div.id = 'delete-confirm';
+  div.className = 'mt-4 p-4 bg-red-50 rounded-xl text-center';
+  div.innerHTML = `
+    <p class="font-semibold text-red-600 mb-3">Delete this recipe?</p>
+    <div class="flex gap-2 justify-center">
+      <button onclick="doDelete()" class="px-6 py-2 bg-red-500 text-white rounded-xl font-semibold">Delete</button>
+      <button onclick="document.getElementById('delete-confirm').remove()" class="px-6 py-2 bg-gray-200 rounded-xl font-semibold">Cancel</button>
+    </div>
+  `;
+  btns.appendChild(div);
+}
+
+async function doDelete() {
+  const recipe = allRecipes.find(r=>r.__backendId===deleteConfirmId);
+  if(!recipe) return;
+  const result = await window.dataSdk.delete(recipe);
+  if(result.isOk) { closeModal(); showToast('Recipe deleted'); }
+  else showToast('Failed to delete');
+}
+
+async function addComment(backendId) {
+  const input = document.getElementById('comment-input');
+  const text = input?.value?.trim();
+  if(!text) return;
+
+  const recipe = allRecipes.find(r=>r.__backendId===backendId);
+  if(!recipe) return;
+  const comments = JSON.parse(recipe.comments||'[]');
+  comments.push({user:currentUser.user_name,text,time:'just now'});
+  recipe.comments = JSON.stringify(comments);
+  const result = await window.dataSdk.update(recipe);
+  if(result.isOk) { showRecipeDetail(recipe); showToast('Comment added!'); }
+}
+
+async function rateRecipe(stars, backendId) {
+  const r = allRecipes.find(x=>x.__backendId===backendId);
+  if(!r) return;
+  const rc = r.rating_count||0;
+  r.rating = ((r.rating*rc)+stars)/(rc+1);
+  r.rating = Math.round(r.rating*10)/10;
+  r.rating_count = rc+1;
+  const result = await window.dataSdk.update(r);
+  if(result.isOk) { showRecipeDetail(r); showToast(`Rated ${stars} stars!`); }
+}
+
+// ===== COOKING MODE =====
+function startCooking(backendId) {
+  const recipe = allRecipes.find(r=>r.__backendId===backendId);
+  if(!recipe) return;
+
+  closeModal();
+  const ingredients = (recipe.ingredients||'').split('|').filter(Boolean);
+  const steps = (recipe.steps||'').split('|').filter(Boolean);
+
+  cookingState = { recipe, ingredients, steps, currentStep: -1, mode: null, started: false };
+  showCookingModeSelect();
+}
+
+function showCookingModeSelect() {
+  const el = document.getElementById('cooking-mode');
+  el.style.display = 'flex';
+  const r = cookingState.recipe;
+  el.innerHTML = `
+    <div class="flex-1 flex flex-col items-center justify-center p-6 text-center">
+      <button onclick="exitCooking()" class="absolute top-5 right-5 w-10 h-10 rounded-full bg-white bg-opacity-20 flex items-center justify-center"><i data-lucide="x" style="width:22px;height:22px;color:#fff"></i></button>
+      <img src="${r.image_url||DEFAULT_AVATAR}" alt="recipe" class="w-24 h-24 rounded-full mb-4" style="object-fit:cover" />
+      <h2 class="text-2xl font-bold mb-2 text-white" style="font-family:'Playfair Display',serif">${r.title}</h2>
+      <p class="opacity-80 mb-8 text-white">Choose your cooking mode</p>
+      <div class="w-full max-w-sm space-y-4">
+        <button onclick="beginCooking('manual')" class="w-full p-5 rounded-2xl bg-white bg-opacity-20 text-left backdrop-blur-sm text-white">
+          <div class="flex items-center gap-4">
+            <span class="text-3xl">👆</span>
+            <div>
+              <p class="font-bold text-lg">Manual Cook</p>
+              <p class="text-sm opacity-80">Tap "Next Step" to advance</p>
+            </div>
+          </div>
+        </button>
+        <button onclick="beginCooking('assisted')" class="w-full p-5 rounded-2xl bg-white bg-opacity-20 text-left backdrop-blur-sm text-white">
+          <div class="flex items-center gap-4">
+            <span class="text-3xl">🎙️</span>
+            <div>
+              <p class="font-bold text-lg">Assisted Cook</p>
+              <p class="text-sm opacity-80">Voice reads steps aloud. Say "MakeMe, next"</p>
+            </div>
+          </div>
+        </button>
+      </div>
+    </div>
+  `;
+  lucide.createIcons();
+}
+
+function beginCooking(mode) {
+  cookingState.mode = mode;
+  cookingState.currentStep = -1;
+  cookingState.started = true;
+  cookingStartTime = Date.now();
+  showCookingStep();
+}
+
+function showCookingStep() {
+  const el = document.getElementById('cooking-mode');
+  const s = cookingState;
+  const isIngredients = s.currentStep === -1;
+  const isComplete = s.currentStep >= s.steps.length;
+  const total = s.steps.length;
+
+  if(isComplete) {
+    const elapsed = Math.floor((Date.now()-cookingStartTime)/60000);
+    const close = Math.abs(elapsed - s.recipe.cook_time) <= s.recipe.cook_time * 0.3;
+    stopVoice();
+    el.innerHTML = `
+      <div class="flex-1 flex flex-col items-center justify-center p-6 text-center text-white">
+        <div class="text-7xl mb-4">✨</div>
+        <h2 class="text-3xl font-bold mb-2" style="font-family:'Playfair Display',serif">Done!</h2>
+        <p class="opacity-80 text-lg mb-2">${s.recipe.title} is ready</p>
+        <p class="opacity-60 text-sm mb-6">Cooked in ${elapsed} min${close?' — right on time!':''}</p>
+        ${close ? '<p class="text-sm bg-white bg-opacity-20 rounded-xl p-3 mb-4">You nailed the timing!</p>' : ''}
+        <button onclick="exitCooking()" class="px-8 py-4 bg-white text-orange-500 rounded-2xl font-bold text-lg shadow-lg">Finish</button>
+      </div>
+    `;
+    return;
+  }
+
+  const progress = isIngredients ? 0 : ((s.currentStep+1)/total*100);
+
+  el.innerHTML = `
+    <div class="flex-1 flex flex-col p-5 text-white" style="position:relative">
+      <div class="flex items-center justify-between mb-4">
+        <button onclick="exitCooking()" class="w-10 h-10 rounded-full bg-white bg-opacity-20 flex items-center justify-center"><i data-lucide="x" style="width:20px;height:20px;color:#fff"></i></button>
+        <div class="text-center">
+          <p class="text-sm opacity-80 font-semibold">${isIngredients ? 'Ingredients' : `Step ${s.currentStep+1} of ${total}`}</p>
+        </div>
+        <div class="w-10"></div>
+      </div>
+
+      <!-- Progress bar -->
+      <div class="w-full h-1.5 bg-white bg-opacity-20 rounded-full mb-6">
+        <div class="h-full bg-white rounded-full transition-all duration-500" style="width:${progress}%"></div>
+      </div>
+
+      <div class="flex-1 flex flex-col items-center justify-center">
+        ${isIngredients ? `
+          <h3 class="text-xl font-bold mb-5" style="font-family:'Playfair Display',serif">Gather Your Ingredients</h3>
+          <div class="step-card w-full max-w-md">
+            <div class="space-y-3">
+              ${s.ingredients.map(i=>`<div class="flex items-center gap-3"><span class="w-2 h-2 rounded-full bg-white flex-shrink-0"></span><span>${i.trim()}</span></div>`).join('')}
+            </div>
+          </div>
+        ` : `
+          <div class="step-card w-full max-w-md text-center">
+            <div class="text-5xl mb-4">${s.currentStep===0?'🔥':s.currentStep===total-1?'🏁':'👨‍🍳'}</div>
+            <p class="text-xl leading-relaxed">${s.steps[s.currentStep].trim()}</p>
+          </div>
+        `}
+      </div>
+
+      <div class="flex gap-3 mt-6 pb-4">
+        ${s.currentStep > -1 ? `<button onclick="prevStep()" class="flex-1 py-4 rounded-2xl bg-white bg-opacity-20 font-bold text-lg">Back</button>` : ''}
+        <button onclick="nextStep()" class="flex-1 py-4 rounded-2xl bg-white font-bold text-lg" style="color:#ff964f">
+          ${isIngredients ? "Let's Cook!" : s.currentStep >= total-1 ? 'Finish' : 'Next Step'}
+        </button>
+      </div>
+
+      ${s.mode==='assisted' ? `
+      <div class="text-center pb-2">
+        <div class="voice-pulse inline-flex items-center gap-2 bg-white bg-opacity-20 rounded-full px-4 py-2">
+          <span class="w-3 h-3 rounded-full bg-white animate-pulse"></span>
+          <span class="text-sm">Say "MakeMe, next" to advance</span>
+        </div>
+      </div>` : ''}
+    </div>
+  `;
+  lucide.createIcons();
+
+  if(s.mode === 'assisted') {
+    const text = isIngredients
+      ? 'Here are your ingredients: ' + s.ingredients.join(', ') + '. Say MakeMe next when you are ready.'
+      : 'Step ' + (s.currentStep+1) + ': ' + s.steps[s.currentStep].trim();
+    speakText(text);
+    startVoiceRecognition();
+  }
+}
+
+function nextStep() {
+  cookingState.currentStep++;
+  showCookingStep();
+}
+
+function prevStep() {
+  if(cookingState.currentStep > -1) cookingState.currentStep--;
+  showCookingStep();
+}
+
+function exitCooking() {
+  stopVoice();
+  stopVoiceRecognition();
+  cookingState = null;
+  document.getElementById('cooking-mode').style.display = 'none';
+}
+
+// ===== VOICE / SPEECH =====
+function getVoiceParams() {
+  const v = currentUser.voice || 'female-american';
+  const parts = v.split('-');
+  const gender = parts[0];
+  const accent = parts[1];
+  let lang = 'en-US';
+  if(accent==='british') lang = 'en-GB';
+  if(accent==='australian') lang = 'en-AU';
+  return { gender, lang };
+}
+
+function speakText(text) {
+  if(!speechSynth) return;
+  stopVoice();
+  const utt = new SpeechSynthesisUtterance(text);
+  const { gender, lang } = getVoiceParams();
+  utt.lang = lang;
+  utt.rate = 0.9;
+  utt.pitch = gender === 'female' ? 1.1 : 0.9;
+
+  // Try to find a matching voice
+  const voices = speechSynth.getVoices();
+  const match = voices.find(v => v.lang.startsWith(lang.split('-')[0]) &&
+    ((gender==='female' && v.name.toLowerCase().includes('female')) ||
+     (gender==='male' && v.name.toLowerCase().includes('male'))));
+  if(match) utt.voice = match;
+  else {
+    const langMatch = voices.find(v=>v.lang.startsWith(lang.split('-')[0]));
+    if(langMatch) utt.voice = langMatch;
+  }
+
+  currentUtterance = utt;
+  speechSynth.speak(utt);
+}
+
+function stopVoice() {
+  if(speechSynth) speechSynth.cancel();
+  currentUtterance = null;
+}
+
+function startVoiceRecognition() {
+  stopVoiceRecognition();
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR) return;
+  voiceRecognition = new SR();
+  voiceRecognition.continuous = true;
+  voiceRecognition.interimResults = false;
+  voiceRecognition.lang = 'en-US';
+  voiceRecognition.onresult = (e) => {
+    const last = e.results[e.results.length-1];
+    if(last.isFinal) {
+      const transcript = last[0].transcript.toLowerCase().trim();
+      if(transcript.includes('makeme') && (transcript.includes('next'))) {
+        nextStep();
+      }
+    }
+  };
+  voiceRecognition.onerror = () => {};
+  voiceRecognition.onend = () => {
+    if(cookingState && cookingState.mode==='assisted') {
+      try { voiceRecognition.start(); } catch(e){}
+    }
+  };
+  try { voiceRecognition.start(); } catch(e){}
+}
+
+function stopVoiceRecognition() {
+  if(voiceRecognition) {
+    try { voiceRecognition.stop(); } catch(e){}
+    voiceRecognition = null;
+  }
+}
+
+// ===== MODAL =====
+function closeModal() {
+  document.getElementById('modal-overlay').style.display = 'none';
+}
+
+// ===== INIT =====
+switchTab('home');
+lucide.createIcons();
+
+// Load voices
+if(speechSynth) speechSynth.onvoiceschanged = () => speechSynth.getVoices();
+
+// Initialize currentUser with default voice
+currentUser = currentUser || { voice: 'female-american' };
+</script>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9e6223e111280e27',t:'MTc3NTE1NzA5NC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
